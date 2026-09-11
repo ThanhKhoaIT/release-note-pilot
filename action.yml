@@ -1,0 +1,40 @@
+name: "Release Note Pilot"
+description: "Generate business-friendly release notes from merged commits/PRs and post them to Slack"
+branding:
+  icon: "message-square"
+  color: "purple"
+
+inputs:
+  repo:
+    description: "owner/repo (default: current repository)"
+    required: false
+    default: ${{ github.repository }}
+  from_ref:
+    description: "Ref before this deploy (default: github.event.before)"
+    required: false
+    default: ${{ github.event.before }}
+  to_ref:
+    description: "Ref being deployed (default: github.sha)"
+    required: false
+    default: ${{ github.sha }}
+  github_token:
+    description: "Token used to call the GitHub API"
+    required: true
+  gemini_api_key:
+    description: "Gemini API key"
+    required: true
+  slack_webhook_url:
+    description: "Slack Incoming Webhook URL"
+    required: true
+  gemini_model:
+    description: "Gemini model used to rewrite/classify entries"
+    required: false
+    default: "gemini-3.6-flash"
+  languages:
+    description: "Comma-separated language codes to generate the release note in (e.g. en,vi)"
+    required: false
+    default: "en"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
