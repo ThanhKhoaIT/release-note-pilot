@@ -34,6 +34,10 @@ inputs:
     description: "Comma-separated language codes to generate the release note in (e.g. en,vi)"
     required: false
     default: "en"
+  include_images:
+    description: "Whether to include screenshots from PR descriptions as Slack image blocks"
+    required: false
+    default: "true"
 
 runs:
   using: "node24"

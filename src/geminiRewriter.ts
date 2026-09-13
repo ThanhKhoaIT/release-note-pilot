@@ -4,6 +4,7 @@ const API_URL = "https://generativelanguage.googleapis.com";
 export const DEFAULT_MODEL = "gemini-3.6-flash";
 export const DEFAULT_LANGUAGES = ["en"];
 const CATEGORY_KEYS: CategoryKey[] = ["feature", "improvement", "bugfix", "other"];
+const MAX_DESCRIPTION_LENGTH = 2000;
 
 interface GeminiItem {
   index: number;
@@ -36,24 +37,42 @@ export class GeminiRewriter {
   }
 
   private promptFor(entries: Entry[]): string {
-    const list = entries
-      .map((entry, i) => `${i + 1}. [${entry.type}] ${entry.title}\n${entry.body}`.trim())
-      .join("\n\n");
+    const list = entries.map((entry, i) => this.itemBlock(entry, i)).join("\n\n");
     const exampleLang = this.languages[0];
 
     return `You are an assistant writing release notes for non-technical business end users.
 
 For each item below:
-1. Classify it into exactly one category key: ${CATEGORY_KEYS.join(", ")}.
-2. Write a short, one-sentence, plain-language description with no technical jargon, in EACH of
+1. Read both the Title and Description (when present) — PR titles are often too terse, and the
+   description usually holds the actual detail needed for an accurate summary.
+2. Classify it into exactly one category key: ${CATEGORY_KEYS.join(", ")}.
+3. Write a short, one-sentence, plain-language description with no technical jargon, in EACH of
    these languages: ${this.languages.join(", ")}.
-3. For each language, also translate the category label itself into that language.
+4. For each language, also translate the category label itself into that language.
 
 Return EXACTLY a JSON array, no explanation or markdown, in this format:
 [{"index": 1, "category_key": "feature", "texts": {"${exampleLang}": {"category": "...", "description": "..."}}}]
 
 Items:
 ${list}`;
+  }
+
+  private itemBlock(entry: Entry, index: number): string {
+    const description = this.cleanDescription(entry.body);
+    const lines = [`${index + 1}. [${entry.type}] Title: ${entry.title}`];
+    if (description) lines.push(`Description: ${description}`);
+    return lines.join("\n");
+  }
+
+  // PR descriptions from templates are noisy: HTML comments, checklists, embedded images.
+  // Strip that noise so the model spends its attention on the actual explanation.
+  private cleanDescription(body: string): string {
+    return body
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, MAX_DESCRIPTION_LENGTH);
   }
 
   private parse(data: unknown, entries: Entry[]): ClassifiedItem[] {
@@ -75,6 +94,7 @@ ${list}`;
         number: entry?.number ?? null,
         url: entry?.url ?? null,
         texts: item.texts,
+        images: entry?.images ?? [],
       };
     });
   }

@@ -63,6 +63,32 @@ describe("GithubFetcher", () => {
     expect(entries[0]).toMatchObject({ type: "commit", title: "Fix typo" });
   });
 
+  it("extracts markdown and HTML image URLs from the PR body", async () => {
+    const client = mockAgent.get("https://api.github.com");
+    client.intercept({ path: `/repos/${REPO}/compare/abc...def`, method: "GET" }).reply(200, {
+      commits: [{ sha: "c1" }],
+    });
+
+    const prPayload = [
+      {
+        number: 10,
+        title: "Add checkout flow",
+        body:
+          "Before/after:\n" +
+          "![before](https://example.com/before.png)\n" +
+          '<img src="https://example.com/after.png" alt="after">',
+        html_url: `https://github.com/${REPO}/pull/10`,
+        merged_at: "2026-01-01T00:00:00Z",
+        user: { login: "khoa" },
+      },
+    ];
+    client.intercept({ path: `/repos/${REPO}/commits/c1/pulls`, method: "GET" }).reply(200, prPayload);
+
+    const entries = await new GithubFetcher(REPO, "token123").entriesBetween("abc", "def");
+
+    expect(entries[0].images).toEqual(["https://example.com/before.png", "https://example.com/after.png"]);
+  });
+
   it("returns an empty array when there are no commits in range", async () => {
     const client = mockAgent.get("https://api.github.com");
     client.intercept({ path: `/repos/${REPO}/compare/abc...abc`, method: "GET" }).reply(200, { commits: [] });

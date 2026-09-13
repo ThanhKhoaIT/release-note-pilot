@@ -15,6 +15,7 @@ describe("GeminiRewriter", () => {
       body: "",
       url: "https://pr/10",
       author: "khoa",
+      images: [],
     },
   ];
 
@@ -45,6 +46,7 @@ describe("GeminiRewriter", () => {
         number: 10,
         url: "https://pr/10",
         texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        images: [],
       },
     ]);
   });
@@ -79,5 +81,45 @@ describe("GeminiRewriter", () => {
     await new GeminiRewriter("key123").classify([]);
 
     expect(mockAgent.pendingInterceptors()).toHaveLength(0);
+  });
+
+  it("includes a cleaned PR description in the prompt sent to Gemini", async () => {
+    const entriesWithBody: Entry[] = [
+      {
+        type: "pull_request",
+        number: 11,
+        title: "Refactor checkout",
+        body:
+          "<!-- please describe your change -->\n" +
+          "Switches checkout to the new payment provider.\n\n\n\n" +
+          "![screenshot](https://example.com/shot.png)\n" +
+          "Closes #42",
+        url: "https://pr/11",
+        author: "khoa",
+        images: ["https://example.com/shot.png"],
+      },
+    ];
+
+    let capturedBody = "";
+    const geminiText =
+      '[{"index":1,"category_key":"improvement","texts":{"en":{"category":"Improvements","description":"Switched checkout to a new payment provider"}}}]';
+    mockAgent
+      .get("https://generativelanguage.googleapis.com")
+      .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
+      .reply(200, ({ body }) => {
+        capturedBody = body as string;
+        return { candidates: [{ content: { parts: [{ text: geminiText }] } }] };
+      });
+
+    const items = await new GeminiRewriter("key123").classify(entriesWithBody);
+
+    const prompt = JSON.parse(capturedBody).contents[0].parts[0].text as string;
+    expect(prompt).toContain("Title: Refactor checkout");
+    expect(prompt).toContain("Description: Switches checkout to the new payment provider.\n\nCloses #42");
+    expect(prompt).not.toContain("<!--");
+    expect(prompt).not.toContain("![screenshot]");
+
+    // Images are stripped from the text prompt but still carried through to the result.
+    expect(items[0].images).toEqual(["https://example.com/shot.png"]);
   });
 });

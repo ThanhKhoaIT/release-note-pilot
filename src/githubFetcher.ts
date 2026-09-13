@@ -82,14 +82,18 @@ export class GithubFetcher {
   }
 
   private pullRequestEntries(prs: GithubPullRequest[]): Entry[] {
-    return prs.map((pr) => ({
-      type: "pull_request",
-      number: pr.number,
-      title: pr.title,
-      body: pr.body ?? "",
-      url: pr.html_url,
-      author: pr.user?.login ?? null,
-    }));
+    return prs.map((pr) => {
+      const body = pr.body ?? "";
+      return {
+        type: "pull_request",
+        number: pr.number,
+        title: pr.title,
+        body,
+        url: pr.html_url,
+        author: pr.user?.login ?? null,
+        images: extractImageUrls(body),
+      };
+    });
   }
 
   private commitEntries(commits: GithubCommit[]): Entry[] {
@@ -102,7 +106,19 @@ export class GithubFetcher {
         body: message,
         url: commit.html_url,
         author: commit.commit?.author?.name ?? null,
+        images: extractImageUrls(message),
       };
     });
   }
+}
+
+// PR/commit descriptions embed screenshots as markdown or raw HTML <img> tags;
+// pull those out so they can be shown as Slack images instead of dead text in the note.
+function extractImageUrls(body: string): string[] {
+  const urls: string[] = [];
+
+  for (const match of body.matchAll(/!\[[^\]]*\]\((\S+?)\)/g)) urls.push(match[1]);
+  for (const match of body.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) urls.push(match[1]);
+
+  return [...new Set(urls)];
 }

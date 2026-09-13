@@ -38,6 +38,10 @@ Set `languages` to a comma-separated list (e.g. `en,vi`) to generate the note
 in several languages at once — each language gets its own section in the
 Slack message.
 
+Screenshots embedded in a PR description are posted to Slack as image blocks
+next to their item; set `include_images: "false"` to skip them and post text
+only.
+
 ### Inputs
 
 | Input                | Required | Default                    |
@@ -50,6 +54,7 @@ Slack message.
 | `slack_webhook_url`   | yes      | —                            |
 | `gemini_model`        | no       | `gemini-3.6-flash`          |
 | `languages`           | no       | `en`                        |
+| `include_images`      | no       | `true`                      |
 
 ## Development
 

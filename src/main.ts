@@ -30,6 +30,7 @@ export async function run(): Promise<void> {
     const slackWebhookUrl = core.getInput("slack_webhook_url", { required: true });
     const model = core.getInput("gemini_model") || DEFAULT_MODEL;
     const languages = parseLanguages(core.getInput("languages"));
+    const includeImages = core.getBooleanInput("include_images", true);
 
     const entries = await new GithubFetcher(repo, githubToken).entriesBetween(fromRef, toRef);
 
@@ -39,7 +40,7 @@ export async function run(): Promise<void> {
     }
 
     const items = await new GeminiRewriter(geminiApiKey, model, languages).classify(entries);
-    await new SlackNotifier(slackWebhookUrl).post(items, repo, toRef, languages);
+    await new SlackNotifier(slackWebhookUrl).post(items, repo, toRef, languages, includeImages);
 
     core.info(`Posted release note (${items.length} items) to Slack.`);
   } catch (err) {

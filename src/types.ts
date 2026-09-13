@@ -5,6 +5,7 @@ export interface Entry {
   body: string;
   url: string;
   author: string | null;
+  images: string[];
 }
 
 export type CategoryKey = "feature" | "improvement" | "bugfix" | "other";
@@ -19,4 +20,5 @@ export interface ClassifiedItem {
   number: number | null;
   url: string | null;
   texts: Record<string, LocalizedText>;
+  images: string[];
 }

@@ -13,6 +13,15 @@ export function getInput(name: string, options?: { required?: boolean }): string
   return value;
 }
 
+export function getBooleanInput(name: string, defaultValue: boolean): boolean {
+  const value = getInput(name).toLowerCase();
+  if (value === "") return defaultValue;
+  if (value === "true") return true;
+  if (value === "false") return false;
+
+  throw new Error(`Input '${name}' must be 'true' or 'false', got '${value}'`);
+}
+
 export function info(message: string): void {
   process.stdout.write(`${message}\n`);
 }
