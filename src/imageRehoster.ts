@@ -38,7 +38,7 @@ export class ImageRehoster {
     try {
       const response = await fetch(url, { headers: { Authorization: `Bearer ${this.githubToken}` } });
       if (!response.ok) {
-        throw new Error(`download failed: ${response.status}`);
+        throw new Error(`download failed: ${response.status}${this.hintFor(url, response.status)}`);
       }
 
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
@@ -49,5 +49,15 @@ export class ImageRehoster {
       console.warn(`Skipping image ${url}: could not rehost to R2 (${(err as Error).message})`);
       return undefined;
     }
+  }
+
+  // GitHub's user-attachments endpoint only works with a classic PAT (ghp_...) — verified by
+  // testing: the default secrets.GITHUB_TOKEN, and even a fine-grained PAT (github_pat_...),
+  // both get a 404 here, while a classic PAT on the same account succeeds.
+  private hintFor(url: string, status: number): string {
+    if (status === 404 && /^https:\/\/github\.com\/user-attachments\//.test(url)) {
+      return " (github_token must be a classic personal access token (ghp_...) for user-attachments downloads; the default secrets.GITHUB_TOKEN and fine-grained PATs don't work here)";
+    }
+    return "";
   }
 }

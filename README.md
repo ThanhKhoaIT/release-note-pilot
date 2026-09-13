@@ -52,6 +52,16 @@ re-upload it to a Cloudflare R2 bucket first, so Slack gets a plain public
 URL instead. All 5 are optional but must be set together; if omitted,
 screenshots are linked directly and may not render for URLs gated by GitHub.
 
+**Important:** the default `secrets.GITHUB_TOKEN` does **not** work for this,
+and neither does a **fine-grained** personal access token — both verified by
+testing. GitHub's `user-attachments` asset endpoint 404s for either, even for
+an image the PR author can see fine in their own browser; this is [GitHub's
+own documented limitation](https://github.com/orgs/community/discussions/169297),
+not a bug in this action. Only a **classic PAT** (`ghp_...`, `repo` scope)
+works here — pass one as `github_token` to make image re-hosting work. It's
+also used for the regular GitHub API calls (listing commits/PRs), which a
+classic PAT covers just as well as the default token.
+
 One-time setup on the Cloudflare side (not done by this action):
 
 1. **Create the bucket:**
@@ -81,13 +91,16 @@ One-time setup on the Cloudflare side (not done by this action):
    action **Delete** after e.g. 7 days. These screenshots are only needed
    for Slack to render them once, not kept long-term.
 
-Then set the 5 values as GitHub secrets (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
-`R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`) and pass them through:
+Also create a classic PAT (see the **Important** note above) and store it as
+a repo secret, e.g. `GH_CLASSIC_PAT`. Then set all 6 values as GitHub secrets
+(`GH_CLASSIC_PAT`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_BUCKET`, `R2_PUBLIC_URL`) and pass them through — note `github_token`
+switches from the default `secrets.GITHUB_TOKEN` to the classic PAT:
 
 ```yaml
       - uses: ThanhKhoaIT/release-note-pilot@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_CLASSIC_PAT }}
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
           r2_account_id: ${{ secrets.R2_ACCOUNT_ID }}
