@@ -53,7 +53,7 @@ Slack message.
 
 ## Development
 
-This is a Node.js action (`runs.using: node20`), bundled with
+This is a Node.js action (`runs.using: node24`), bundled with
 [`@vercel/ncc`](https://github.com/vercel/ncc) into `dist/index.js`, which
 must be committed — consumers run the bundled file directly, no install step.
 
