@@ -38,6 +38,26 @@ inputs:
     description: "Whether to include screenshots from PR descriptions as Slack image blocks"
     required: false
     default: "true"
+  r2_account_id:
+    description: >-
+      Cloudflare account ID. Optional — set this together with r2_access_key_id,
+      r2_secret_access_key, r2_bucket, and r2_public_url to re-host PR screenshots on R2, since
+      GitHub's attachment URLs require an authenticated session and Slack can't load them directly.
+    required: false
+  r2_access_key_id:
+    description: "Cloudflare R2 access key ID (see r2_account_id)"
+    required: false
+  r2_secret_access_key:
+    description: "Cloudflare R2 secret access key (see r2_account_id)"
+    required: false
+  r2_bucket:
+    description: "Cloudflare R2 bucket to upload re-hosted screenshots to (see r2_account_id)"
+    required: false
+  r2_public_url:
+    description: >-
+      Public base URL for the R2 bucket, e.g. an r2.dev dev URL or a custom domain, no trailing
+      slash (see r2_account_id)
+    required: false
 
 runs:
   using: "node24"
