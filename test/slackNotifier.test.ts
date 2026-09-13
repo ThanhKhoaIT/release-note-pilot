@@ -26,6 +26,18 @@ describe("SlackNotifier", () => {
     images: [],
   };
 
+  function capture(): { get: () => Record<string, unknown> } {
+    let capturedBody = "{}";
+    mockAgent
+      .get("https://hooks.slack.com")
+      .intercept({ path: "/services/xxx", method: "POST" })
+      .reply(200, ({ body }) => {
+        capturedBody = body as string;
+        return "ok";
+      });
+    return { get: () => JSON.parse(capturedBody) };
+  }
+
   describe("#post", () => {
     it("posts grouped blocks to the webhook", async () => {
       const client = mockAgent.get("https://hooks.slack.com");
@@ -49,7 +61,7 @@ describe("SlackNotifier", () => {
       expect(mockAgent.pendingInterceptors()).toHaveLength(0);
     });
 
-    it("posts one section per requested language", async () => {
+    it("posts one section per requested language, labeled with flag + full name", async () => {
       const bilingual: ClassifiedItem = {
         categoryKey: "feature",
         number: 10,
@@ -61,14 +73,7 @@ describe("SlackNotifier", () => {
         images: [],
       };
 
-      let capturedBody: string | undefined;
-      mockAgent
-        .get("https://hooks.slack.com")
-        .intercept({ path: "/services/xxx", method: "POST" })
-        .reply(200, ({ body }) => {
-          capturedBody = body as string;
-          return "ok";
-        });
+      const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
         [bilingual],
@@ -77,46 +82,38 @@ describe("SlackNotifier", () => {
         ["en", "vi"]
       );
 
-      const payload = JSON.parse(capturedBody ?? "{}");
-      const text = JSON.stringify(payload);
+      const text = JSON.stringify(payload.get());
       expect(text).toContain("Added a new checkout step");
       expect(text).toContain("Thêm bước thanh toán mới");
+      expect(text).toContain("🇬🇧 English");
+      expect(text).toContain("🇻🇳 Vietnamese");
     });
 
-    it("adds an image block for items with screenshots, capped per item", async () => {
-      const withImages: ClassifiedItem = {
+    it("falls back to the uppercase code for an unmapped language", async () => {
+      const item: ClassifiedItem = {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
-        images: ["https://example.com/1.png", "https://example.com/2.png", "https://example.com/3.png", "https://example.com/4.png"],
+        texts: {
+          en: { category: "New Features", description: "Added a new checkout step" },
+          xx: { category: "New Features", description: "Xx description" },
+        },
+        images: [],
       };
 
-      let capturedBody: string | undefined;
-      mockAgent
-        .get("https://hooks.slack.com")
-        .intercept({ path: "/services/xxx", method: "POST" })
-        .reply(200, ({ body }) => {
-          capturedBody = body as string;
-          return "ok";
-        });
+      const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [withImages],
+        [item],
         "lixibox/example",
         "abcdef1234567",
-        ["en"]
+        ["en", "xx"]
       );
 
-      const payload = JSON.parse(capturedBody ?? "{}");
-      const imageBlocks = payload.blocks.filter((b: { type: string }) => b.type === "image");
-
-      expect(imageBlocks).toHaveLength(3);
-      expect(imageBlocks[0]).toMatchObject({ image_url: "https://example.com/1.png" });
-      expect(imageBlocks[0].alt_text).toBeTruthy();
+      expect(JSON.stringify(payload.get())).toContain("*XX*");
     });
 
-    it("skips image blocks and folds items back into the text list when includeImages is false", async () => {
+    it("groups items with screenshots into a carousel of cards", async () => {
       const withImages: ClassifiedItem = {
         categoryKey: "feature",
         number: 10,
@@ -125,14 +122,59 @@ describe("SlackNotifier", () => {
         images: ["https://example.com/1.png"],
       };
 
-      let capturedBody: string | undefined;
-      mockAgent
-        .get("https://hooks.slack.com")
-        .intercept({ path: "/services/xxx", method: "POST" })
-        .reply(200, ({ body }) => {
-          capturedBody = body as string;
-          return "ok";
-        });
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        [withImages],
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ type: string; elements?: Array<{ type: string }> }>;
+      const carousels = blocks.filter((b) => b.type === "carousel");
+
+      expect(carousels).toHaveLength(1);
+      expect(carousels[0].elements).toHaveLength(1);
+      expect(carousels[0].elements?.[0]).toMatchObject({ type: "card" });
+    });
+
+    it("splits more than 10 image items into multiple carousels", async () => {
+      const items: ClassifiedItem[] = Array.from({ length: 12 }, (_, i) => ({
+        categoryKey: "feature",
+        number: i,
+        url: `https://pr/${i}`,
+        texts: { en: { category: "New Features", description: `Change ${i}` } },
+        images: [`https://example.com/${i}.png`],
+      }));
+
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        items,
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ type: string; elements?: unknown[] }>;
+      const carousels = blocks.filter((b) => b.type === "carousel");
+
+      expect(carousels).toHaveLength(2);
+      expect(carousels[0].elements).toHaveLength(10);
+      expect(carousels[1].elements).toHaveLength(2);
+    });
+
+    it("skips carousels and folds items back into the text list when includeImages is false", async () => {
+      const withImages: ClassifiedItem = {
+        categoryKey: "feature",
+        number: 10,
+        url: "https://pr/10",
+        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        images: ["https://example.com/1.png"],
+      };
+
+      const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
         [withImages],
@@ -142,15 +184,13 @@ describe("SlackNotifier", () => {
         false
       );
 
-      const payload = JSON.parse(capturedBody ?? "{}");
-      const imageBlocks = payload.blocks.filter((b: { type: string }) => b.type === "image");
-      const text = JSON.stringify(payload);
-
-      expect(imageBlocks).toHaveLength(0);
-      expect(text).toContain("Added a new checkout step");
+      const body = payload.get();
+      const blocks = body.blocks as Array<{ type: string }>;
+      expect(blocks.filter((b) => b.type === "carousel")).toHaveLength(0);
+      expect(JSON.stringify(body)).toContain("Added a new checkout step");
     });
 
-    it("drops non-https or overlong image URLs before posting", async () => {
+    it("drops non-https or overlong image URLs and treats the item as text-only", async () => {
       const withBadImages: ClassifiedItem = {
         categoryKey: "feature",
         number: 10,
@@ -159,14 +199,7 @@ describe("SlackNotifier", () => {
         images: ["http://example.com/insecure.png", `https://example.com/${"a".repeat(3000)}.png`],
       };
 
-      let capturedBody: string | undefined;
-      mockAgent
-        .get("https://hooks.slack.com")
-        .intercept({ path: "/services/xxx", method: "POST" })
-        .reply(200, ({ body }) => {
-          capturedBody = body as string;
-          return "ok";
-        });
+      const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
         [withBadImages],
@@ -175,8 +208,8 @@ describe("SlackNotifier", () => {
         ["en"]
       );
 
-      const payload = JSON.parse(capturedBody ?? "{}");
-      expect(payload.blocks.filter((b: { type: string }) => b.type === "image")).toHaveLength(0);
+      const blocks = payload.get().blocks as Array<{ type: string }>;
+      expect(blocks.filter((b) => b.type === "carousel")).toHaveLength(0);
     });
 
     it("retries without images when Slack rejects the payload with invalid_blocks", async () => {
@@ -189,10 +222,7 @@ describe("SlackNotifier", () => {
       };
 
       const client = mockAgent.get("https://hooks.slack.com");
-      client
-        .intercept({ path: "/services/xxx", method: "POST" })
-        .reply(400, "invalid_blocks")
-        .times(1);
+      client.intercept({ path: "/services/xxx", method: "POST" }).reply(400, "invalid_blocks");
 
       let retryBody: string | undefined;
       client.intercept({ path: "/services/xxx", method: "POST" }).reply(200, ({ body }) => {
@@ -208,7 +238,7 @@ describe("SlackNotifier", () => {
       );
 
       const payload = JSON.parse(retryBody ?? "{}");
-      expect(payload.blocks.filter((b: { type: string }) => b.type === "image")).toHaveLength(0);
+      expect(payload.blocks.filter((b: { type: string }) => b.type === "carousel")).toHaveLength(0);
     });
   });
 });
