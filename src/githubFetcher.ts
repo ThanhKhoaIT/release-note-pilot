@@ -120,5 +120,5 @@ function extractImageUrls(body: string): string[] {
   for (const match of body.matchAll(/!\[[^\]]*\]\((\S+?)\)/g)) urls.push(match[1]);
   for (const match of body.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) urls.push(match[1]);
 
-  return [...new Set(urls)];
+  return [...new Set(urls)].filter((url) => /^https?:\/\//i.test(url));
 }

@@ -149,5 +149,66 @@ describe("SlackNotifier", () => {
       expect(imageBlocks).toHaveLength(0);
       expect(text).toContain("Added a new checkout step");
     });
+
+    it("drops non-https or overlong image URLs before posting", async () => {
+      const withBadImages: ClassifiedItem = {
+        categoryKey: "feature",
+        number: 10,
+        url: "https://pr/10",
+        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        images: ["http://example.com/insecure.png", `https://example.com/${"a".repeat(3000)}.png`],
+      };
+
+      let capturedBody: string | undefined;
+      mockAgent
+        .get("https://hooks.slack.com")
+        .intercept({ path: "/services/xxx", method: "POST" })
+        .reply(200, ({ body }) => {
+          capturedBody = body as string;
+          return "ok";
+        });
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        [withBadImages],
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const payload = JSON.parse(capturedBody ?? "{}");
+      expect(payload.blocks.filter((b: { type: string }) => b.type === "image")).toHaveLength(0);
+    });
+
+    it("retries without images when Slack rejects the payload with invalid_blocks", async () => {
+      const withImages: ClassifiedItem = {
+        categoryKey: "feature",
+        number: 10,
+        url: "https://pr/10",
+        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        images: ["https://example.com/1.png"],
+      };
+
+      const client = mockAgent.get("https://hooks.slack.com");
+      client
+        .intercept({ path: "/services/xxx", method: "POST" })
+        .reply(400, "invalid_blocks")
+        .times(1);
+
+      let retryBody: string | undefined;
+      client.intercept({ path: "/services/xxx", method: "POST" }).reply(200, ({ body }) => {
+        retryBody = body as string;
+        return "ok";
+      });
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        [withImages],
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const payload = JSON.parse(retryBody ?? "{}");
+      expect(payload.blocks.filter((b: { type: string }) => b.type === "image")).toHaveLength(0);
+    });
   });
 });

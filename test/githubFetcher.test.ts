@@ -89,6 +89,32 @@ describe("GithubFetcher", () => {
     expect(entries[0].images).toEqual(["https://example.com/before.png", "https://example.com/after.png"]);
   });
 
+  it("drops image URLs that are not absolute http(s) links", async () => {
+    const client = mockAgent.get("https://api.github.com");
+    client.intercept({ path: `/repos/${REPO}/compare/abc...def`, method: "GET" }).reply(200, {
+      commits: [{ sha: "c1" }],
+    });
+
+    const prPayload = [
+      {
+        number: 10,
+        title: "Add checkout flow",
+        body:
+          "![relative](/assets/shot.png)\n" +
+          "![data](data:image/png;base64,aGVsbG8=)\n" +
+          "![ok](https://example.com/shot.png)",
+        html_url: `https://github.com/${REPO}/pull/10`,
+        merged_at: "2026-01-01T00:00:00Z",
+        user: { login: "khoa" },
+      },
+    ];
+    client.intercept({ path: `/repos/${REPO}/commits/c1/pulls`, method: "GET" }).reply(200, prPayload);
+
+    const entries = await new GithubFetcher(REPO, "token123").entriesBetween("abc", "def");
+
+    expect(entries[0].images).toEqual(["https://example.com/shot.png"]);
+  });
+
   it("returns an empty array when there are no commits in range", async () => {
     const client = mockAgent.get("https://api.github.com");
     client.intercept({ path: `/repos/${REPO}/compare/abc...abc`, method: "GET" }).reply(200, { commits: [] });
