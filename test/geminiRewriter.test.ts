@@ -30,22 +30,25 @@ describe("GeminiRewriter", () => {
     setGlobalDispatcher(originalDispatcher);
   });
 
-  it("parses Gemini's JSON response into a categorized, single-language item by default", async () => {
+  it("parses Gemini's JSON response into a summary + categorized, single-language item by default", async () => {
     const geminiText =
-      '[{"index":1,"category_key":"feature","texts":{"en":{"category":"New Features","description":"Added a new checkout step"}}}]';
+      '{"summary":{"en":"One checkout improvement this release."},' +
+      '"items":[{"index":1,"category_key":"feature","texts":{"en":{"description":"Added a new checkout step"}}}]}';
     mockAgent
       .get("https://generativelanguage.googleapis.com")
       .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
       .reply(200, { candidates: [{ content: { parts: [{ text: geminiText }] } }] });
 
-    const items = await new GeminiRewriter("key123").classify(entries);
+    const result = await new GeminiRewriter("key123").classify(entries);
 
-    expect(items).toEqual([
+    expect(result.summary).toEqual({ en: "One checkout improvement this release." });
+    expect(result.items).toEqual([
       {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        author: "khoa",
+        texts: { en: { description: "Added a new checkout step" } },
         images: [],
       },
     ]);
@@ -53,19 +56,20 @@ describe("GeminiRewriter", () => {
 
   it("requests and parses multiple languages when configured", async () => {
     const geminiText =
-      '[{"index":1,"category_key":"feature","texts":{' +
-      '"en":{"category":"New Features","description":"Added a new checkout step"},' +
-      '"vi":{"category":"Tính năng mới","description":"Thêm bước thanh toán mới"}' +
-      "}}]";
+      '{"summary":{"en":"Summary","vi":"Tóm tắt"},"items":[{"index":1,"category_key":"feature","texts":{' +
+      '"en":{"description":"Added a new checkout step"},' +
+      '"vi":{"description":"Thêm bước thanh toán mới"}' +
+      "}}]}";
     mockAgent
       .get("https://generativelanguage.googleapis.com")
       .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
       .reply(200, { candidates: [{ content: { parts: [{ text: geminiText }] } }] });
 
-    const items = await new GeminiRewriter("key123", undefined, ["en", "vi"]).classify(entries);
+    const result = await new GeminiRewriter("key123", undefined, ["en", "vi"]).classify(entries);
 
-    expect(items[0].texts.en.description).toBe("Added a new checkout step");
-    expect(items[0].texts.vi.description).toBe("Thêm bước thanh toán mới");
+    expect(result.items[0].texts.en.description).toBe("Added a new checkout step");
+    expect(result.items[0].texts.vi.description).toBe("Thêm bước thanh toán mới");
+    expect(result.summary.vi).toBe("Tóm tắt");
   });
 
   it("throws when the response cannot be parsed as JSON", async () => {
@@ -77,9 +81,10 @@ describe("GeminiRewriter", () => {
     await expect(new GeminiRewriter("key123").classify(entries)).rejects.toThrow(/could not be parsed/);
   });
 
-  it("returns an empty array without calling the API when there are no entries", async () => {
-    await new GeminiRewriter("key123").classify([]);
+  it("returns an empty summary/items without calling the API when there are no entries", async () => {
+    const result = await new GeminiRewriter("key123").classify([]);
 
+    expect(result).toEqual({ summary: {}, items: [] });
     expect(mockAgent.pendingInterceptors()).toHaveLength(0);
   });
 
@@ -102,7 +107,8 @@ describe("GeminiRewriter", () => {
 
     let capturedBody = "";
     const geminiText =
-      '[{"index":1,"category_key":"improvement","texts":{"en":{"category":"Improvements","description":"Switched checkout to a new payment provider"}}}]';
+      '{"summary":{"en":"Summary"},"items":[{"index":1,"category_key":"improvement",' +
+      '"texts":{"en":{"description":"Switched checkout to a new payment provider"}}}]}';
     mockAgent
       .get("https://generativelanguage.googleapis.com")
       .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
@@ -111,7 +117,7 @@ describe("GeminiRewriter", () => {
         return { candidates: [{ content: { parts: [{ text: geminiText }] } }] };
       });
 
-    const items = await new GeminiRewriter("key123").classify(entriesWithBody);
+    const result = await new GeminiRewriter("key123").classify(entriesWithBody);
 
     const prompt = JSON.parse(capturedBody).contents[0].parts[0].text as string;
     expect(prompt).toContain("Title: Refactor checkout");
@@ -120,6 +126,7 @@ describe("GeminiRewriter", () => {
     expect(prompt).not.toContain("![screenshot]");
 
     // Images are stripped from the text prompt but still carried through to the result.
-    expect(items[0].images).toEqual(["https://example.com/shot.png"]);
+    expect(result.items[0].images).toEqual(["https://example.com/shot.png"]);
+    expect(result.items[0].author).toBe("khoa");
   });
 });

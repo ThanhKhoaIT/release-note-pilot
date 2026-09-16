@@ -67,15 +67,15 @@ export async function run(): Promise<void> {
       return;
     }
 
-    let items = await new GeminiRewriter(geminiApiKey, model, languages).classify(entries);
+    const result = await new GeminiRewriter(geminiApiKey, model, languages).classify(entries);
 
     if (includeImages && r2Config) {
-      items = await new ImageRehoster(new R2Uploader(r2Config), githubToken).rehost(items);
+      result.items = await new ImageRehoster(new R2Uploader(r2Config), githubToken).rehost(result.items);
     }
 
-    await new SlackNotifier(slackWebhookUrl).post(items, repo, toRef, languages, includeImages);
+    await new SlackNotifier(slackWebhookUrl).post(result, repo, toRef, languages, includeImages);
 
-    core.info(`Posted release note (${items.length} items) to Slack.`);
+    core.info(`Posted release note (${result.items.length} items) to Slack.`);
   } catch (err) {
     core.setFailed(err instanceof Error ? err.message : String(err));
   }

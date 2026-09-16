@@ -31,7 +31,8 @@ describe("ImageRehoster", () => {
     categoryKey: "feature",
     number: 10,
     url: "https://pr/10",
-    texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+    author: "khoa",
+    texts: { en: { description: "Added a new checkout step" } },
     images: ["https://github.com/user-attachments/assets/abc123"],
   };
 

@@ -1,4 +1,4 @@
-import type { CategoryKey, ClassifiedItem, Entry } from "./types";
+import type { CategoryKey, ClassificationResult, Entry } from "./types";
 
 const API_URL = "https://generativelanguage.googleapis.com";
 export const DEFAULT_MODEL = "gemini-3.6-flash";
@@ -9,7 +9,12 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 interface GeminiItem {
   index: number;
   category_key: CategoryKey;
-  texts: Record<string, { category: string; description: string }>;
+  texts: Record<string, { description: string }>;
+}
+
+interface GeminiResponse {
+  summary: Record<string, string>;
+  items: GeminiItem[];
 }
 
 /** Rewrites technical PR/commit entries into plain-language, categorized, multi-language release notes. */
@@ -20,8 +25,8 @@ export class GeminiRewriter {
     private readonly languages: string[] = DEFAULT_LANGUAGES
   ) {}
 
-  async classify(entries: Entry[]): Promise<ClassifiedItem[]> {
-    if (entries.length === 0) return [];
+  async classify(entries: Entry[]): Promise<ClassificationResult> {
+    if (entries.length === 0) return { summary: {}, items: [] };
 
     const response = await fetch(`${API_URL}/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`, {
       method: "POST",
@@ -42,16 +47,19 @@ export class GeminiRewriter {
 
     return `You are an assistant writing release notes for non-technical business end users.
 
-For each item below:
+First, write a short overall summary (1-3 sentences) highlighting the most notable changes in
+this release, in EACH of these languages: ${this.languages.join(", ")}.
+
+Then, for each item below:
 1. Read both the Title and Description (when present) — PR titles are often too terse, and the
    description usually holds the actual detail needed for an accurate summary.
 2. Classify it into exactly one category key: ${CATEGORY_KEYS.join(", ")}.
-3. Write a short, one-sentence, plain-language description with no technical jargon, in EACH of
-   these languages: ${this.languages.join(", ")}.
-4. For each language, also translate the category label itself into that language.
+3. Write a clear, one-line, plain-language description with no technical jargon — include enough
+   detail (what changed and why it matters) for a non-technical reader to understand the impact,
+   but keep it to a single line. Write it in EACH of these languages: ${this.languages.join(", ")}.
 
-Return EXACTLY a JSON array, no explanation or markdown, in this format:
-[{"index": 1, "category_key": "feature", "texts": {"${exampleLang}": {"category": "...", "description": "..."}}}]
+Return EXACTLY a JSON object, no explanation or markdown, in this format:
+{"summary": {"${exampleLang}": "..."}, "items": [{"index": 1, "category_key": "feature", "texts": {"${exampleLang}": {"description": "..."}}}]}
 
 Items:
 ${list}`;
@@ -75,28 +83,31 @@ ${list}`;
       .slice(0, MAX_DESCRIPTION_LENGTH);
   }
 
-  private parse(data: unknown, entries: Entry[]): ClassifiedItem[] {
+  private parse(data: unknown, entries: Entry[]): ClassificationResult {
     const text = this.extractText(data);
-    const match = text.match(/\[[\s\S]*\]/);
+    const match = text.match(/\{[\s\S]*\}/);
     const jsonText = match ? match[0] : text;
 
-    let items: GeminiItem[];
+    let response: GeminiResponse;
     try {
-      items = JSON.parse(jsonText) as GeminiItem[];
+      response = JSON.parse(jsonText) as GeminiResponse;
     } catch (err) {
       throw new Error(`Gemini returned data that could not be parsed as JSON: ${(err as Error).message}`);
     }
 
-    return items.map((item) => {
+    const items = response.items.map((item) => {
       const entry = entries[item.index - 1];
       return {
         categoryKey: item.category_key,
         number: entry?.number ?? null,
         url: entry?.url ?? null,
+        author: entry?.author ?? null,
         texts: item.texts,
         images: entry?.images ?? [],
       };
     });
+
+    return { summary: response.summary ?? {}, items };
   }
 
   private extractText(data: unknown): string {

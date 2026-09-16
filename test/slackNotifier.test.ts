@@ -1,7 +1,7 @@
 import { getGlobalDispatcher, MockAgent, setGlobalDispatcher } from "undici";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SlackNotifier } from "../src/slackNotifier";
-import type { ClassifiedItem } from "../src/types";
+import type { ClassifiedItem, ClassificationResult } from "../src/types";
 
 describe("SlackNotifier", () => {
   let mockAgent: MockAgent;
@@ -22,9 +22,14 @@ describe("SlackNotifier", () => {
     categoryKey: "bugfix",
     number: null,
     url: null,
-    texts: { en: { category: "Bug Fixes", description: "Fixed a login issue" } },
+    author: "khoa",
+    texts: { en: { description: "Fixed a login issue" } },
     images: [],
   };
+
+  function result(items: ClassifiedItem[], summary: Record<string, string> = {}): ClassificationResult {
+    return { summary, items };
+  }
 
   function capture(): { get: () => Record<string, unknown> } {
     let capturedBody = "{}";
@@ -44,7 +49,7 @@ describe("SlackNotifier", () => {
       client.intercept({ path: "/services/xxx", method: "POST" }).reply(200, "ok");
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [bugfixEn],
+        result([bugfixEn]),
         "lixibox/example",
         "abcdef1234567",
         ["en"]
@@ -54,11 +59,124 @@ describe("SlackNotifier", () => {
     });
 
     it("does not call the webhook when there are no items", async () => {
-      await new SlackNotifier("https://hooks.slack.com/services/xxx").post([], "lixibox/example", "abcdef1234567", [
-        "en",
-      ]);
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
 
       expect(mockAgent.pendingInterceptors()).toHaveLength(0);
+    });
+
+    it("renders the category with its fixed label and emoji, not Gemini-provided text", async () => {
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([bugfixEn]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const text = JSON.stringify(payload.get());
+      expect(text).toContain("🐛 Bug Fixes");
+    });
+
+    it("inlines the item on the category line when it's the only one in that category", async () => {
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([bugfixEn]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ text?: { text?: string } }>;
+      expect(blocks.some((b) => b.text?.text === "*🐛 Bug Fixes:* Fixed a login issue")).toBe(true);
+    });
+
+    it("keeps the category label on its own line with bullets when there are multiple items", async () => {
+      const items: ClassifiedItem[] = [
+        { ...bugfixEn, texts: { en: { description: "Fixed a login issue" } } },
+        { ...bugfixEn, texts: { en: { description: "Fixed a checkout crash" } } },
+      ];
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result(items),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ text?: { text?: string } }>;
+      expect(blocks.some((b) => b.text?.text === "*🐛 Bug Fixes*")).toBe(true);
+      expect(blocks.some((b) => b.text?.text === "• Fixed a login issue\n• Fixed a checkout crash")).toBe(true);
+    });
+
+    it("includes the summary near the top when present", async () => {
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([bugfixEn], { en: "One bug fix this release." }),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      expect(JSON.stringify(payload.get())).toContain("One bug fix this release.");
+    });
+
+    it("omits the summary block when none is provided for a language", async () => {
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([bugfixEn]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ text?: { text?: string } }>;
+      expect(blocks.some((b) => b.text?.text === "Fixed a login issue")).toBe(false);
+    });
+
+    it("adds a contributors block listing unique PR authors", async () => {
+      const items: ClassifiedItem[] = [
+        { ...bugfixEn, author: "khoa" },
+        { ...bugfixEn, author: "alice" },
+        { ...bugfixEn, author: "khoa" },
+        { ...bugfixEn, author: null },
+      ];
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result(items),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const text = JSON.stringify(payload.get());
+      expect(text).toContain("Contributors");
+      expect(text).toContain("<https://github.com/khoa|@khoa>");
+      expect(text).toContain("<https://github.com/alice|@alice>");
+      expect((text.match(/@khoa/g) ?? []).length).toBe(1);
+    });
+
+    it("omits the contributors block when no item has an author", async () => {
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([{ ...bugfixEn, author: null }]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      expect(JSON.stringify(payload.get())).not.toContain("Contributors");
     });
 
     it("posts one section per requested language, labeled with flag + full name", async () => {
@@ -66,9 +184,10 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
+        author: "khoa",
         texts: {
-          en: { category: "New Features", description: "Added a new checkout step" },
-          vi: { category: "Tính năng mới", description: "Thêm bước thanh toán mới" },
+          en: { description: "Added a new checkout step" },
+          vi: { description: "Thêm bước thanh toán mới" },
         },
         images: [],
       };
@@ -76,7 +195,7 @@ describe("SlackNotifier", () => {
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [bilingual],
+        result([bilingual]),
         "lixibox/example",
         "abcdef1234567",
         ["en", "vi"]
@@ -87,6 +206,8 @@ describe("SlackNotifier", () => {
       expect(text).toContain("Thêm bước thanh toán mới");
       expect(text).toContain("🇬🇧 English");
       expect(text).toContain("🇻🇳 Vietnamese");
+      expect(text).toContain("🆕 What's New");
+      expect(text).toContain("🆕 Có gì mới");
     });
 
     it("falls back to the uppercase code for an unmapped language", async () => {
@@ -94,9 +215,10 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
+        author: "khoa",
         texts: {
-          en: { category: "New Features", description: "Added a new checkout step" },
-          xx: { category: "New Features", description: "Xx description" },
+          en: { description: "Added a new checkout step" },
+          xx: { description: "Xx description" },
         },
         images: [],
       };
@@ -104,7 +226,7 @@ describe("SlackNotifier", () => {
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [item],
+        result([item]),
         "lixibox/example",
         "abcdef1234567",
         ["en", "xx"]
@@ -118,14 +240,15 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        author: "khoa",
+        texts: { en: { description: "Added a new checkout step" } },
         images: ["https://example.com/1.png"],
       };
 
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [withImages],
+        result([withImages]),
         "lixibox/example",
         "abcdef1234567",
         ["en"]
@@ -144,14 +267,15 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: i,
         url: `https://pr/${i}`,
-        texts: { en: { category: "New Features", description: `Change ${i}` } },
+        author: "khoa",
+        texts: { en: { description: `Change ${i}` } },
         images: [`https://example.com/${i}.png`],
       }));
 
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        items,
+        result(items),
         "lixibox/example",
         "abcdef1234567",
         ["en"]
@@ -170,14 +294,15 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        author: "khoa",
+        texts: { en: { description: "Added a new checkout step" } },
         images: ["https://example.com/1.png"],
       };
 
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [withImages],
+        result([withImages]),
         "lixibox/example",
         "abcdef1234567",
         ["en"],
@@ -195,14 +320,15 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        author: "khoa",
+        texts: { en: { description: "Added a new checkout step" } },
         images: ["http://example.com/insecure.png", `https://example.com/${"a".repeat(3000)}.png`],
       };
 
       const payload = capture();
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [withBadImages],
+        result([withBadImages]),
         "lixibox/example",
         "abcdef1234567",
         ["en"]
@@ -217,7 +343,8 @@ describe("SlackNotifier", () => {
         categoryKey: "feature",
         number: 10,
         url: "https://pr/10",
-        texts: { en: { category: "New Features", description: "Added a new checkout step" } },
+        author: "khoa",
+        texts: { en: { description: "Added a new checkout step" } },
         images: ["https://example.com/1.png"],
       };
 
@@ -231,7 +358,7 @@ describe("SlackNotifier", () => {
       });
 
       await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
-        [withImages],
+        result([withImages]),
         "lixibox/example",
         "abcdef1234567",
         ["en"]

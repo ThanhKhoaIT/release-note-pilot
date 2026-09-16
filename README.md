@@ -38,6 +38,12 @@ Set `languages` to a comma-separated list (e.g. `en,vi`) to generate the note
 in several languages at once — each language gets its own section in the
 Slack message.
 
+The Slack message opens with a 1-3 line summary of the release, then groups
+items under fixed, emoji-labeled categories (🆕 What's New, ✨ Improvements,
+🐛 Bug Fixes, 📦 Other — translated per language where mapped, English
+otherwise), and closes with a **Contributors** line linking each unique PR
+author's GitHub profile.
+
 Screenshots embedded in a PR description are posted to Slack as image cards
 grouped in a carousel next to their category; set `include_images: "false"`
 to skip them and post text only.

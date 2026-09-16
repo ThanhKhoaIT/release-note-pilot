@@ -11,7 +11,6 @@ export interface Entry {
 export type CategoryKey = "feature" | "improvement" | "bugfix" | "other";
 
 export interface LocalizedText {
-  category: string;
   description: string;
 }
 
@@ -19,6 +18,13 @@ export interface ClassifiedItem {
   categoryKey: CategoryKey;
   number: number | null;
   url: string | null;
+  author: string | null;
   texts: Record<string, LocalizedText>;
   images: string[];
+}
+
+export interface ClassificationResult {
+  /** 1-3 line overall highlight, per language. */
+  summary: Record<string, string>;
+  items: ClassifiedItem[];
 }
