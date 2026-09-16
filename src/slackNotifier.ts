@@ -135,19 +135,19 @@ export class SlackNotifier {
       const label = categoryLabel(key, lang);
       const withImage = includeImages ? group.filter((item) => this.firstValidImage(item) !== undefined) : [];
       const withoutImage = group.filter((item) => !withImage.includes(item));
+      const bullets = withoutImage.flatMap((item) => item.texts[lang]?.descriptions ?? []);
 
-      // A single text-only item reads better inline with the category label than as its own
-      // line with a lone bullet underneath.
-      if (group.length === 1 && withImage.length === 0) {
-        const description = withoutImage[0].texts[lang]?.description ?? "";
-        blocks.push({ type: "section", text: { type: "mrkdwn", text: truncate(`*${label}:* ${description}`, MAX_SECTION_LENGTH) } });
+      // A single bullet line reads better inline with the category label than as its own
+      // line with a lone bullet underneath — regardless of whether it came from one item.
+      if (withImage.length === 0 && bullets.length === 1) {
+        blocks.push({ type: "section", text: { type: "mrkdwn", text: truncate(`*${label}:* ${bullets[0]}`, MAX_SECTION_LENGTH) } });
         continue;
       }
 
       blocks.push({ type: "section", text: { type: "mrkdwn", text: truncate(`*${label}*`, MAX_SECTION_LENGTH) } });
 
-      if (withoutImage.length > 0) {
-        const text = withoutImage.map((item) => `• ${item.texts[lang]?.description ?? ""}`).join("\n");
+      if (bullets.length > 0) {
+        const text = bullets.map((line) => `• ${line}`).join("\n");
         blocks.push({ type: "section", text: { type: "mrkdwn", text: truncate(text, MAX_SECTION_LENGTH) } });
       }
 
@@ -163,7 +163,7 @@ export class SlackNotifier {
   }
 
   private cardFor(item: ClassifiedItem, lang: string, label: string): unknown {
-    const description = item.texts[lang]?.description ?? "";
+    const description = item.texts[lang]?.descriptions?.[0] ?? "";
     return {
       type: "card",
       title: { type: "plain_text", text: truncate(description || label, MAX_CARD_TITLE_LENGTH) },

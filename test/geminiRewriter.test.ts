@@ -33,7 +33,7 @@ describe("GeminiRewriter", () => {
   it("parses Gemini's JSON response into a summary + categorized, single-language item by default", async () => {
     const geminiText =
       '{"summary":{"en":"One checkout improvement this release."},' +
-      '"items":[{"index":1,"category_key":"feature","texts":{"en":{"description":"Added a new checkout step"}}}]}';
+      '"items":[{"index":1,"category_key":"feature","texts":{"en":{"descriptions":["Added a new checkout step"]}}}]}';
     mockAgent
       .get("https://generativelanguage.googleapis.com")
       .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
@@ -48,7 +48,7 @@ describe("GeminiRewriter", () => {
         number: 10,
         url: "https://pr/10",
         author: "khoa",
-        texts: { en: { description: "Added a new checkout step" } },
+        texts: { en: { descriptions: ["Added a new checkout step"] } },
         images: [],
       },
     ]);
@@ -57,8 +57,8 @@ describe("GeminiRewriter", () => {
   it("requests and parses multiple languages when configured", async () => {
     const geminiText =
       '{"summary":{"en":"Summary","vi":"Tóm tắt"},"items":[{"index":1,"category_key":"feature","texts":{' +
-      '"en":{"description":"Added a new checkout step"},' +
-      '"vi":{"description":"Thêm bước thanh toán mới"}' +
+      '"en":{"descriptions":["Added a new checkout step"]},' +
+      '"vi":{"descriptions":["Thêm bước thanh toán mới"]}' +
       "}}]}";
     mockAgent
       .get("https://generativelanguage.googleapis.com")
@@ -67,8 +67,8 @@ describe("GeminiRewriter", () => {
 
     const result = await new GeminiRewriter("key123", undefined, ["en", "vi"]).classify(entries);
 
-    expect(result.items[0].texts.en.description).toBe("Added a new checkout step");
-    expect(result.items[0].texts.vi.description).toBe("Thêm bước thanh toán mới");
+    expect(result.items[0].texts.en.descriptions).toEqual(["Added a new checkout step"]);
+    expect(result.items[0].texts.vi.descriptions).toEqual(["Thêm bước thanh toán mới"]);
     expect(result.summary.vi).toBe("Tóm tắt");
   });
 
@@ -108,7 +108,7 @@ describe("GeminiRewriter", () => {
     let capturedBody = "";
     const geminiText =
       '{"summary":{"en":"Summary"},"items":[{"index":1,"category_key":"improvement",' +
-      '"texts":{"en":{"description":"Switched checkout to a new payment provider"}}}]}';
+      '"texts":{"en":{"descriptions":["Switched checkout to a new payment provider"]}}}]}';
     mockAgent
       .get("https://generativelanguage.googleapis.com")
       .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
@@ -128,5 +128,23 @@ describe("GeminiRewriter", () => {
     // Images are stripped from the text prompt but still carried through to the result.
     expect(result.items[0].images).toEqual(["https://example.com/shot.png"]);
     expect(result.items[0].author).toBe("khoa");
+  });
+
+  it("carries through multiple short bullet points when one item bundles several changes", async () => {
+    const geminiText =
+      '{"summary":{"en":"Summary"},"items":[{"index":1,"category_key":"feature","texts":{"en":{"descriptions":[' +
+      '"Added a hidden approve/reject option for admins",' +
+      '"Auto-cancels stale booking links",' +
+      '"Extended candidate proposal rights to Hiring Managers"' +
+      "]}}}]}";
+    mockAgent
+      .get("https://generativelanguage.googleapis.com")
+      .intercept({ path: /\/v1beta\/models\/.*:generateContent.*/, method: "POST" })
+      .reply(200, { candidates: [{ content: { parts: [{ text: geminiText }] } }] });
+
+    const result = await new GeminiRewriter("key123").classify(entries);
+
+    expect(result.items[0].texts.en.descriptions).toHaveLength(3);
+    expect(result.items[0].texts.en.descriptions[1]).toBe("Auto-cancels stale booking links");
   });
 });

@@ -11,7 +11,8 @@ export interface Entry {
 export type CategoryKey = "feature" | "improvement" | "bugfix" | "other";
 
 export interface LocalizedText {
-  description: string;
+  /** One or more short bullet points — a PR/commit that bundles several distinct changes gets one per change. */
+  descriptions: string[];
 }
 
 export interface ClassifiedItem {

@@ -32,7 +32,7 @@ describe("ImageRehoster", () => {
     number: 10,
     url: "https://pr/10",
     author: "khoa",
-    texts: { en: { description: "Added a new checkout step" } },
+    texts: { en: { descriptions: ["Added a new checkout step"] } },
     images: ["https://github.com/user-attachments/assets/abc123"],
   };
 

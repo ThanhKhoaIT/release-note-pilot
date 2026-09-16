@@ -23,7 +23,7 @@ describe("SlackNotifier", () => {
     number: null,
     url: null,
     author: "khoa",
-    texts: { en: { description: "Fixed a login issue" } },
+    texts: { en: { descriptions: ["Fixed a login issue"] } },
     images: [],
   };
 
@@ -97,10 +97,43 @@ describe("SlackNotifier", () => {
       expect(blocks.some((b) => b.text?.text === "*🐛 Bug Fixes:* Fixed a login issue")).toBe(true);
     });
 
+    it("does not inline a single item that bundles multiple bullet points", async () => {
+      const bundled: ClassifiedItem = {
+        ...bugfixEn,
+        texts: {
+          en: {
+            descriptions: [
+              "Added a hidden approve/reject option for admins",
+              "Auto-cancels stale booking links",
+              "Extended candidate proposal rights to Hiring Managers",
+            ],
+          },
+        },
+      };
+      const payload = capture();
+
+      await new SlackNotifier("https://hooks.slack.com/services/xxx").post(
+        result([bundled]),
+        "lixibox/example",
+        "abcdef1234567",
+        ["en"]
+      );
+
+      const blocks = payload.get().blocks as Array<{ text?: { text?: string } }>;
+      expect(blocks.some((b) => b.text?.text === "*🐛 Bug Fixes*")).toBe(true);
+      expect(
+        blocks.some(
+          (b) =>
+            b.text?.text ===
+            "• Added a hidden approve/reject option for admins\n• Auto-cancels stale booking links\n• Extended candidate proposal rights to Hiring Managers"
+        )
+      ).toBe(true);
+    });
+
     it("keeps the category label on its own line with bullets when there are multiple items", async () => {
       const items: ClassifiedItem[] = [
-        { ...bugfixEn, texts: { en: { description: "Fixed a login issue" } } },
-        { ...bugfixEn, texts: { en: { description: "Fixed a checkout crash" } } },
+        { ...bugfixEn, texts: { en: { descriptions: ["Fixed a login issue"] } } },
+        { ...bugfixEn, texts: { en: { descriptions: ["Fixed a checkout crash"] } } },
       ];
       const payload = capture();
 
@@ -186,8 +219,8 @@ describe("SlackNotifier", () => {
         url: "https://pr/10",
         author: "khoa",
         texts: {
-          en: { description: "Added a new checkout step" },
-          vi: { description: "Thêm bước thanh toán mới" },
+          en: { descriptions: ["Added a new checkout step"] },
+          vi: { descriptions: ["Thêm bước thanh toán mới"] },
         },
         images: [],
       };
@@ -217,8 +250,8 @@ describe("SlackNotifier", () => {
         url: "https://pr/10",
         author: "khoa",
         texts: {
-          en: { description: "Added a new checkout step" },
-          xx: { description: "Xx description" },
+          en: { descriptions: ["Added a new checkout step"] },
+          xx: { descriptions: ["Xx description"] },
         },
         images: [],
       };
@@ -241,7 +274,7 @@ describe("SlackNotifier", () => {
         number: 10,
         url: "https://pr/10",
         author: "khoa",
-        texts: { en: { description: "Added a new checkout step" } },
+        texts: { en: { descriptions: ["Added a new checkout step"] } },
         images: ["https://example.com/1.png"],
       };
 
@@ -268,7 +301,7 @@ describe("SlackNotifier", () => {
         number: i,
         url: `https://pr/${i}`,
         author: "khoa",
-        texts: { en: { description: `Change ${i}` } },
+        texts: { en: { descriptions: [`Change ${i}`] } },
         images: [`https://example.com/${i}.png`],
       }));
 
@@ -295,7 +328,7 @@ describe("SlackNotifier", () => {
         number: 10,
         url: "https://pr/10",
         author: "khoa",
-        texts: { en: { description: "Added a new checkout step" } },
+        texts: { en: { descriptions: ["Added a new checkout step"] } },
         images: ["https://example.com/1.png"],
       };
 
@@ -321,7 +354,7 @@ describe("SlackNotifier", () => {
         number: 10,
         url: "https://pr/10",
         author: "khoa",
-        texts: { en: { description: "Added a new checkout step" } },
+        texts: { en: { descriptions: ["Added a new checkout step"] } },
         images: ["http://example.com/insecure.png", `https://example.com/${"a".repeat(3000)}.png`],
       };
 
@@ -344,7 +377,7 @@ describe("SlackNotifier", () => {
         number: 10,
         url: "https://pr/10",
         author: "khoa",
-        texts: { en: { description: "Added a new checkout step" } },
+        texts: { en: { descriptions: ["Added a new checkout step"] } },
         images: ["https://example.com/1.png"],
       };
 
